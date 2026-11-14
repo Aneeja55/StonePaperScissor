@@ -1,0 +1,4 @@
+__pycache__/
+*.py[cod]
+dataset/
+hand_landmarker.task
