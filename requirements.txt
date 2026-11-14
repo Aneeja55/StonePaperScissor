@@ -1,0 +1,4 @@
+opencv-python
+cvzone==2.0.0
+mediapipe>=0.10.31,<0.11
+numpy

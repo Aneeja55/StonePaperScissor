@@ -1,80 +1,84 @@
-import cv2
 import random
 import time
-from cvzone.HandTrackingModule import HandDetector
 
-cap = cv2.VideoCapture(0)
+import cv2
 
-detector = HandDetector(maxHands=1)
+from game_rules import countdown_remaining, gesture_from_fingers, round_winner
+from hand_tracking import create_hand_detector
 
-playerScore = 0
-aiScore = 0
 
-timer = 0
-stateResult = False
-startGame = False
+ROUND_DURATION = 2.0
 
-while True:
-    success, img = cap.read()
-    img = cv2.flip(img, 1)
 
-    hands, img = detector.findHands(img)
+def main():
+    detector = create_hand_detector()
+    cap = cv2.VideoCapture(0)
 
-    cv2.putText(img, f'Player: {playerScore}', (20,50),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
+    if not cap.isOpened():
+        cap.release()
+        raise RuntimeError("Could not open the webcam. Check the camera connection and permissions.")
 
-    cv2.putText(img, f'AI: {aiScore}', (20,100),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
+    player_score = 0
+    ai_score = 0
+    round_started_at = None
+    round_message = "Press S to start a round"
 
-    if startGame:
+    try:
+        while True:
+            success, img = cap.read()
+            if not success:
+                raise RuntimeError("Could not read a frame from the webcam.")
 
-        if stateResult is False:
-            timer = time.time()
+            img = cv2.flip(img, 1)
+            hands, img = detector.findHands(img)
 
-            if time.time() - timer > 2:
+            if round_started_at is not None:
+                remaining = countdown_remaining(
+                    round_started_at, time.monotonic(), ROUND_DURATION
+                )
+                if remaining == 0:
+                    round_started_at = None
+                    if not hands:
+                        round_message = "No hand detected. Press S to retry"
+                    else:
+                        player_move = gesture_from_fingers(detector.fingersUp(hands[0]))
+                        if player_move is None:
+                            round_message = "Gesture not recognized. Press S to retry"
+                        else:
+                            ai_move = random.choice(("rock", "paper", "scissors"))
+                            winner = round_winner(player_move, ai_move)
+                            if winner == "player":
+                                player_score += 1
+                                result = "You win"
+                            elif winner == "ai":
+                                ai_score += 1
+                                result = "AI wins"
+                            else:
+                                result = "Tie"
+                            round_message = f"You: {player_move} | AI: {ai_move} | {result}"
+                else:
+                    round_message = f"Show your move: {remaining:.1f}"
 
-                stateResult = True
+            cv2.putText(img, f"Player: {player_score}", (20, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            cv2.putText(img, f"AI: {ai_score}", (20, 100),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            cv2.putText(img, round_message, (20, 150),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            cv2.putText(img, "S: start/retry    Q: quit", (20, 190),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            cv2.imshow("AI Rock Paper Scissors", img)
 
-                if hands:
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("s"):
+                round_started_at = time.monotonic()
+                round_message = "Show your move"
+            elif key == ord("q"):
+                break
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
 
-                    hand = hands[0]
-                    fingers = detector.fingersUp(hand)
 
-                    playerMove = None
-
-                    if fingers == [0,0,0,0,0]:
-                        playerMove = "rock"
-
-                    if fingers == [1,1,1,1,1]:
-                        playerMove = "paper"
-
-                    if fingers == [0,1,1,0,0]:
-                        playerMove = "scissors"
-
-                    aiMove = random.choice(["rock","paper","scissors"])
-
-                    print("Player:", playerMove)
-                    print("AI:", aiMove)
-
-                    if playerMove == "rock" and aiMove == "scissors":
-                        playerScore += 1
-                    elif playerMove == "paper" and aiMove == "rock":
-                        playerScore += 1
-                    elif playerMove == "scissors" and aiMove == "paper":
-                        playerScore += 1
-                    elif playerMove != aiMove:
-                        aiScore += 1
-
-    cv2.imshow("AI Rock Paper Scissors", img)
-
-    key = cv2.waitKey(1)
-
-    if key == ord('s'):
-        startGame = True
-        stateResult = False
-
-    if key == ord('q'):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    main()
